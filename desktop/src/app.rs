@@ -25,6 +25,15 @@ pub enum Message {
     GenerateTest,
     TestGenerated(String),
     CopyTestToClipboard,
+    ExportTrace,
+    TraceExported(String),
+    CopyExportToClipboard,
+    ShowImportPanel,
+    ImportJsonChanged(String),
+    ImportTrace,
+    TraceImported,
+    CloseExportPanel,
+    CloseImportPanel,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -97,6 +106,11 @@ pub struct App {
     show_cost_panel: bool,
     generated_test: Option<String>,
     test_loading: bool,
+    export_json: Option<String>,
+    show_export_panel: bool,
+    show_import_panel: bool,
+    import_json: String,
+    import_loading: bool,
 }
 
 impl Application for App {
@@ -119,6 +133,11 @@ impl Application for App {
                 show_cost_panel: false,
                 generated_test: None,
                 test_loading: false,
+                export_json: None,
+                show_export_panel: false,
+                show_import_panel: false,
+                import_json: String::new(),
+                import_loading: false,
             },
             fetch_traces(),
         )
@@ -222,6 +241,51 @@ impl Application for App {
                     return clipboard::write(code.clone());
                 }
             }
+            Message::ExportTrace => {
+                if let Some(trace) = &self.selected_trace {
+                    let trace_id = trace.id.clone();
+                    return export_trace(trace_id);
+                }
+            }
+            Message::TraceExported(json) => {
+                self.export_json = Some(json);
+                self.show_export_panel = true;
+                self.show_import_panel = false;
+            }
+            Message::CopyExportToClipboard => {
+                if let Some(json) = &self.export_json {
+                    return clipboard::write(json.clone());
+                }
+            }
+            Message::ShowImportPanel => {
+                self.show_import_panel = true;
+                self.show_export_panel = false;
+                self.import_json.clear();
+            }
+            Message::ImportJsonChanged(json) => {
+                self.import_json = json;
+            }
+            Message::ImportTrace => {
+                if !self.import_json.trim().is_empty() {
+                    self.import_loading = true;
+                    let json = self.import_json.clone();
+                    return import_trace(json);
+                }
+            }
+            Message::TraceImported => {
+                self.import_loading = false;
+                self.show_import_panel = false;
+                self.import_json.clear();
+                return fetch_traces();
+            }
+            Message::CloseExportPanel => {
+                self.show_export_panel = false;
+                self.export_json = None;
+            }
+            Message::CloseImportPanel => {
+                self.show_import_panel = false;
+                self.import_json.clear();
+            }
         }
         Command::none()
     }
@@ -242,7 +306,11 @@ impl Application for App {
         .padding(8)
         .width(Length::Fill);
 
-        let middle: Element<'_, Message> = if self.show_cost_panel {
+        let middle: Element<'_, Message> = if self.show_export_panel {
+            self.view_export_panel()
+        } else if self.show_import_panel {
+            self.view_import_panel()
+        } else if self.show_cost_panel {
             self.view_cost_analysis()
         } else {
             self.view_timeline()
@@ -354,6 +422,54 @@ fn generate_test(trace_id: String) -> Command<Message> {
     )
 }
 
+fn export_trace(trace_id: String) -> Command<Message> {
+    let url = format!("{}/api/traces/{}/export", BACKEND_URL, trace_id);
+    Command::perform(
+        async move {
+            match reqwest::get(&url).await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.text().await {
+                            Ok(json) => Message::TraceExported(json),
+                            Err(_) => Message::Noop,
+                        }
+                    } else {
+                        Message::Noop
+                    }
+                }
+                Err(_) => Message::Noop,
+            }
+        },
+        |msg| msg,
+    )
+}
+
+fn import_trace(json: String) -> Command<Message> {
+    let url = format!("{}/api/traces/import", BACKEND_URL);
+    Command::perform(
+        async move {
+            let client = reqwest::Client::new();
+            match client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .body(json)
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        Message::TraceImported
+                    } else {
+                        Message::Noop
+                    }
+                }
+                Err(_) => Message::Noop,
+            }
+        },
+        |msg| msg,
+    )
+}
+
 fn fork_trace(trace_id: String, branch_name: String, model_name: String) -> Command<Message> {
     let url = format!("{}/api/traces/{}/fork", BACKEND_URL, trace_id);
     Command::perform(
@@ -403,12 +519,28 @@ impl App {
             .collect();
 
         let mut sidebar_col = column![
-            text("Traces").size(20),
+            row![
+                text("Traces").size(20),
+                button(text("Import").size(12))
+                    .on_press(Message::ShowImportPanel)
+                    .padding(4),
+            ]
+            .spacing(8)
+            .align_items(iced::Alignment::Center),
             horizontal_rule(1),
             scrollable(column(trace_items).spacing(2))
         ]
         .spacing(8)
         .padding(12);
+
+        if self.selected_trace.is_some() {
+            sidebar_col = sidebar_col.push(
+                button(text("Export Trace").size(13))
+                    .on_press(Message::ExportTrace)
+                    .padding(6)
+                    .width(Length::Fill),
+            );
+        }
 
         if !self.branches.is_empty() {
             let branch_items: Vec<Element<'_, Message>> = self
@@ -743,6 +875,79 @@ impl App {
         container(inspector_col)
             .height(Length::FillPortion(1))
             .into()
+    }
+
+    fn view_export_panel(&self) -> Element<'_, Message> {
+        let content: Element<'_, Message> = match &self.export_json {
+            Some(json) => column![
+                row![
+                    text("Export Trace").size(20),
+                    button(text("Copy").size(12))
+                        .on_press(Message::CopyExportToClipboard)
+                        .padding(4),
+                    button(text("Close").size(12))
+                        .on_press(Message::CloseExportPanel)
+                        .padding(4),
+                ]
+                .spacing(8)
+                .align_items(iced::Alignment::Center),
+                horizontal_rule(1),
+                scrollable(
+                    container(text(json.as_str()).size(12))
+                        .padding(8)
+                )
+                .height(Length::Fill),
+            ]
+            .spacing(8)
+            .into(),
+            None => column![
+                text("Export Trace").size(20),
+                horizontal_rule(1),
+                text("Loading...").size(14),
+            ]
+            .spacing(8)
+            .into(),
+        };
+
+        container(content)
+            .padding(12)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn view_import_panel(&self) -> Element<'_, Message> {
+        let import_btn_label = if self.import_loading {
+            "Importing..."
+        } else {
+            "Import"
+        };
+        let mut import_btn = button(text(import_btn_label).size(13)).padding(6);
+        if !self.import_loading && !self.import_json.trim().is_empty() {
+            import_btn = import_btn.on_press(Message::ImportTrace);
+        }
+
+        column![
+            row![
+                text("Import Trace").size(20),
+                import_btn,
+                button(text("Close").size(12))
+                    .on_press(Message::CloseImportPanel)
+                    .padding(4),
+            ]
+            .spacing(8)
+            .align_items(iced::Alignment::Center),
+            horizontal_rule(1),
+            text("Paste exported trace JSON below:").size(14),
+            text_input("Paste JSON here...", &self.import_json)
+                .on_input(Message::ImportJsonChanged)
+                .padding(8),
+        ]
+        .spacing(8)
+        .padding(12)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 }
 
