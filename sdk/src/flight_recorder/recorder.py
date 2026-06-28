@@ -3,7 +3,10 @@ import threading
 import time
 from typing import Any
 
+from flight_recorder.log_config import get_logger
 from flight_recorder.models import Step, StepType, Trace
+
+logger = get_logger(__name__)
 
 _last_trace: Trace | None = None
 _ctx: threading.local = threading.local()
@@ -48,6 +51,7 @@ class _RecorderContext:
         )
         self._trace.steps.append(step)
         self._index += 1
+        logger.debug("Captured LLM call step: %s (index=%d)", name, step.index)
 
     def tool_call(
         self,
@@ -67,13 +71,14 @@ class _RecorderContext:
         )
         self._trace.steps.append(step)
         self._index += 1
+        logger.debug("Captured tool call step: %s (index=%d)", name, step.index)
 
     def set_context(self, context: dict[str, Any]) -> None:
         self._context = context
 
 
 def _get_active_ctx() -> _RecorderContext:
-    ctx = getattr(_ctx, "active", None)
+    ctx: _RecorderContext | None = getattr(_ctx, "active", None)
     if ctx is None:
         raise RuntimeError(
             "record.llm_call/tool_call/set_context must be called inside a @record-decorated function"
@@ -82,12 +87,13 @@ def _get_active_ctx() -> _RecorderContext:
 
 
 class _Record:
-    def __call__(self, fn):
+    def __call__(self, fn):  # type: ignore[no-untyped-def]
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             global _last_trace
             ctx = _RecorderContext(agent_name=fn.__name__)
             _ctx.active = ctx
+            logger.info("Recording started for agent: %s", fn.__name__)
             start = time.perf_counter()
             try:
                 result = fn(*args, **kwargs)
@@ -122,6 +128,11 @@ class _Record:
             finally:
                 _last_trace = ctx._trace
                 _ctx.active = None
+                logger.info(
+                    "Recording ended for agent: %s (steps=%d)",
+                    fn.__name__,
+                    len(ctx._trace.steps),
+                )
 
         return wrapper
 

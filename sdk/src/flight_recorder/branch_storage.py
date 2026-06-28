@@ -10,7 +10,7 @@ from flight_recorder.models import Branch, Step, StepType
 Base = declarative_base()
 
 
-class BranchRow(Base):
+class BranchRow(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "branches"
 
     id = Column(String, primary_key=True)
@@ -23,7 +23,7 @@ class BranchRow(Base):
     steps = relationship("BranchStepRow", back_populates="branch", cascade="all, delete-orphan", order_by="BranchStepRow.index")
 
 
-class BranchStepRow(Base):
+class BranchStepRow(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "branch_steps"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -116,26 +116,26 @@ class BranchStorage:
     def _row_to_branch(row: BranchRow) -> Branch:
         steps = [
             Step(
-                index=s.index,
-                step_type=StepType(s.step_type),
-                name=s.name,
-                input_data=json.loads(s.input_json),
-                output_data=json.loads(s.output_json),
-                tokens_in=s.tokens_in,
-                tokens_out=s.tokens_out,
-                cost=s.cost,
-                duration_ms=s.duration_ms,
-                context_snapshot=json.loads(s.context_json) if s.context_json is not None else None,
-                error=s.error,
+                index=s.index,  # type: ignore[arg-type]
+                step_type=StepType(s.step_type),  # type: ignore[arg-type]
+                name=s.name,  # type: ignore[arg-type]
+                input_data=json.loads(s.input_json),  # type: ignore[arg-type]
+                output_data=json.loads(s.output_json),  # type: ignore[arg-type]
+                tokens_in=s.tokens_in,  # type: ignore[arg-type]
+                tokens_out=s.tokens_out,  # type: ignore[arg-type]
+                cost=s.cost,  # type: ignore[arg-type]
+                duration_ms=s.duration_ms,  # type: ignore[arg-type]
+                context_snapshot=json.loads(s.context_json) if s.context_json is not None else None,  # type: ignore[arg-type]
+                error=s.error,  # type: ignore[arg-type]
             )
             for s in row.steps
         ]
         return Branch(
-            id=row.id,
-            name=row.name,
-            parent_trace_id=row.parent_trace_id,
-            fork_step_index=row.fork_step_index,
-            modifications=json.loads(row.modifications_json),
+            id=row.id,  # type: ignore[arg-type]
+            name=row.name,  # type: ignore[arg-type]
+            parent_trace_id=row.parent_trace_id,  # type: ignore[arg-type]
+            fork_step_index=row.fork_step_index,  # type: ignore[arg-type]
+            modifications=json.loads(row.modifications_json),  # type: ignore[arg-type]
             steps=steps,
-            created_at=row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at,
+            created_at=row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at,  # type: ignore[arg-type]
         )

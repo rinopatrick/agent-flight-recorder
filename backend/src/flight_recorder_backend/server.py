@@ -1,17 +1,24 @@
+import logging
 import os
+import time
+from collections.abc import Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from flight_recorder import Branch, export_trace, import_trace
+from flight_recorder.log_config import get_logger
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.replay import ReplayEngine
 from flight_recorder_backend.test_generator import TestGenerator
+
+logger = get_logger(__name__)
 
 
 class CreateBranchRequest(BaseModel):
@@ -46,14 +53,30 @@ async def verify_api_key(
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:  # type: ignore[override]
     raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        start = time.perf_counter()
+        logger.info("Request: %s %s", request.method, request.url.path)
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "Response: %s %s -> %d (%.1fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+        return response
 
 
 def create_app(db: Database) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -61,6 +84,7 @@ def create_app(db: Database) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestLoggingMiddleware)
 
     @app.get("/api/health")
     @limiter.limit(RATE_LIMIT)
