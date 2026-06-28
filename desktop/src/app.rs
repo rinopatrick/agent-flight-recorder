@@ -21,6 +21,7 @@ pub enum Message {
     BranchesLoaded(Vec<BranchSummary>),
     BranchSelected(String),
     BranchLoaded(BranchDetail),
+    ToggleCostPanel,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,6 +91,7 @@ pub struct App {
     fork_step_index: Option<usize>,
     fork_name: String,
     fork_model: String,
+    show_cost_panel: bool,
 }
 
 impl Application for App {
@@ -109,6 +111,7 @@ impl Application for App {
                 fork_step_index: None,
                 fork_name: String::new(),
                 fork_model: String::new(),
+                show_cost_panel: false,
             },
             fetch_traces(),
         )
@@ -188,16 +191,38 @@ impl Application for App {
                 self.selected_branch = Some(detail);
                 self.selected_step = None;
             }
+            Message::ToggleCostPanel => {
+                self.show_cost_panel = !self.show_cost_panel;
+            }
         }
         Command::none()
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
         let sidebar = self.view_sidebar();
-        let timeline = self.view_timeline();
+        let cost_btn_label = if self.show_cost_panel { "Timeline" } else { "Cost" };
+        let header = container(
+            row![
+                text("Agent Flight Recorder").size(18),
+                button(text(cost_btn_label).size(13))
+                    .on_press(Message::ToggleCostPanel)
+                    .padding(4),
+            ]
+            .spacing(12)
+            .align_items(iced::Alignment::Center),
+        )
+        .padding(8)
+        .width(Length::Fill);
+
+        let middle: Element<'_, Message> = if self.show_cost_panel {
+            self.view_cost_analysis()
+        } else {
+            self.view_timeline()
+        };
+
         let inspector = self.view_inspector();
 
-        let main_area = column![timeline, horizontal_rule(1), inspector]
+        let main_area = column![header, horizontal_rule(1), middle, horizontal_rule(1), inspector]
             .spacing(0)
             .width(Length::Fill)
             .height(Length::Fill);
@@ -438,6 +463,94 @@ impl App {
 
         container(
             column![text("Timeline").size(20), horizontal_rule(1), content]
+                .spacing(8)
+                .padding(12),
+        )
+        .height(Length::FillPortion(2))
+        .into()
+    }
+
+    fn view_cost_analysis(&self) -> Element<'_, Message> {
+        let steps = match &self.selected_trace {
+            Some(trace) => &trace.steps,
+            None => {
+                return container(
+                    column![
+                        text("Cost Analysis").size(20),
+                        horizontal_rule(1),
+                        text("Select a trace to view cost analysis").size(14),
+                    ]
+                    .spacing(8)
+                    .padding(12),
+                )
+                .height(Length::FillPortion(2))
+                .into();
+            }
+        };
+
+        if steps.is_empty() {
+            return container(
+                column![
+                    text("Cost Analysis").size(20),
+                    horizontal_rule(1),
+                    text("No steps in this trace").size(14),
+                ]
+                .spacing(8)
+                .padding(12),
+            )
+            .height(Length::FillPortion(2))
+            .into();
+        }
+
+        let total_cost: f64 = steps.iter().map(|s| s.cost).sum();
+
+        let max_idx = steps
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        let mut sorted: Vec<(usize, &StepDetail)> = steps.iter().enumerate().collect();
+        sorted.sort_by(|a, b| b.1.cost.partial_cmp(&a.1.cost).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut items: Vec<Element<'_, Message>> = Vec::new();
+        items.push(text(format!("Total Cost: ${:.4}", total_cost)).size(18).into());
+        items.push(horizontal_rule(1).into());
+        items.push(text("Steps by cost (descending):").size(14).into());
+
+        let mut cumulative = 0.0f64;
+        for (orig_idx, step) in &sorted {
+            cumulative += step.cost;
+            let pct = if total_cost > 0.0 { step.cost / total_cost * 100.0 } else { 0.0 };
+            let is_max = *orig_idx == max_idx;
+
+            let label = text(format!(
+                "#{} [{}] {}  ${:.4} ({:.1}%)  cum: ${:.4}  {}ms",
+                step.index, step.step_type, step.name, step.cost, pct, cumulative, step.duration_ms
+            ))
+            .size(13);
+
+            let row: Element<'_, Message> = if is_max {
+                // Highlight the most expensive step using a container with distinct styling
+                container(
+                    text(format!(
+                        "#{} [{}] {}  ${:.4} ({:.1}%)  cum: ${:.4}  {}ms  << MOST EXPENSIVE",
+                        step.index, step.step_type, step.name, step.cost, pct, cumulative, step.duration_ms
+                    ))
+                    .size(13),
+                )
+                .padding(4)
+                .into()
+            } else {
+                label.into()
+            };
+
+            items.push(row);
+        }
+
+        container(
+            column![text("Cost Analysis").size(20), horizontal_rule(1), scrollable(column(items).spacing(4))]
                 .spacing(8)
                 .padding(12),
         )
