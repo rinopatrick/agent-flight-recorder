@@ -240,3 +240,34 @@ def test_fork_invalid_step_index(client: TestClient, db: Database) -> None:
     )
     assert resp.status_code == 400
     assert "fork_step_index" in resp.json()["detail"]
+
+
+# --- Generate test endpoint ---
+
+
+def test_generate_test(client: TestClient, db: Database) -> None:
+    trace = _make_trace("my-agent", n_steps=2)
+    db.save_trace(trace)
+
+    resp = client.post(f"/api/traces/{trace.id}/generate-test")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["trace_id"] == trace.id
+    assert "test_code" in data
+    assert isinstance(data["test_code"], str)
+    assert "def test_agent_" in data["test_code"]
+
+
+def test_generate_test_not_found(client: TestClient) -> None:
+    resp = client.post("/api/traces/nonexistent/generate-test")
+    assert resp.status_code == 404
+
+
+def test_generate_test_contains_assertions(client: TestClient, db: Database) -> None:
+    trace = _make_trace("chatbot", n_steps=3)
+    db.save_trace(trace)
+
+    resp = client.post(f"/api/traces/{trace.id}/generate-test")
+    code = resp.json()["test_code"]
+    assert "run_agent" in code
+    assert "assert_model_used" in code

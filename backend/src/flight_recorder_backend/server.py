@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from flight_recorder import Branch
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.replay import ReplayEngine
+from flight_recorder_backend.test_generator import TestGenerator
 
 
 class CreateBranchRequest(BaseModel):
@@ -120,6 +121,15 @@ def create_app(db: Database) -> FastAPI:
         )
         db.branches.save_branch(branch)
         return _branch_to_dict(branch)
+
+    @app.post("/api/traces/{trace_id}/generate-test")
+    def generate_test(trace_id: str) -> dict:
+        trace = db.get_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        generator = TestGenerator()
+        test_code = generator.generate_test(trace)
+        return {"test_code": test_code, "trace_id": trace_id}
 
     return app
 
