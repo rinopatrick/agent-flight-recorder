@@ -290,7 +290,7 @@ def test_import_trace(client: TestClient, db: Database) -> None:
         "metadata": trace.metadata,
     }
 
-    resp = client.post("/api/traces/import", json=export_data)
+    resp = client.post("/api/traces/import", json={"data": export_data})
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == trace.id
@@ -304,7 +304,7 @@ def test_import_trace(client: TestClient, db: Database) -> None:
 
 
 def test_import_trace_invalid_data(client: TestClient) -> None:
-    resp = client.post("/api/traces/import", json={"bad": "data"})
+    resp = client.post("/api/traces/import", json={"data": {"bad": "data"}})
     assert resp.status_code == 400
 
 
@@ -320,7 +320,7 @@ def test_export_import_roundtrip(client: TestClient, db: Database, tmp_path: Pat
     app2 = create_app(db2)
     client2 = TestClient(app2)
 
-    import_resp = client2.post("/api/traces/import", json=export_data)
+    import_resp = client2.post("/api/traces/import", json={"data": export_data})
     assert import_resp.status_code == 200
     data = import_resp.json()
     assert data["id"] == original.id

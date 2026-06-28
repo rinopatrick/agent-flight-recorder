@@ -1,5 +1,12 @@
-from fastapi import FastAPI, HTTPException
+import os
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from flight_recorder import Branch, export_trace, import_trace
 from flight_recorder_backend.db import Database
@@ -19,15 +26,52 @@ class ForkRequest(BaseModel):
     modifications: dict = {}
 
 
+class ImportTraceRequest(BaseModel):
+    data: dict
+
+
+API_KEY = os.environ.get("FLIGHT_RECORDER_API_KEY")
+RATE_LIMIT = os.environ.get("FLIGHT_RECORDER_RATE_LIMIT", "100/minute")
+
+security = HTTPBearer(auto_error=False)
+limiter = Limiter(key_func=get_remote_address, default_limits=[RATE_LIMIT])
+
+
+async def verify_api_key(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> None:
+    if API_KEY is None:
+        return
+    if credentials is None or credentials.credentials != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+
 def create_app(db: Database) -> FastAPI:
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/api/health")
-    def health() -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def health(request: Request) -> dict:
         return {"status": "ok"}
 
     @app.get("/api/traces")
-    def list_traces() -> list[dict]:
+    @limiter.limit(RATE_LIMIT)
+    def list_traces(
+        request: Request, _auth: None = Depends(verify_api_key)
+    ) -> list[dict]:
         traces = db.list_traces()
         return [
             {
@@ -41,7 +85,10 @@ def create_app(db: Database) -> FastAPI:
         ]
 
     @app.get("/api/traces/{trace_id}")
-    def get_trace(trace_id: str) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def get_trace(
+        request: Request, trace_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         trace = db.get_trace(trace_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
@@ -69,7 +116,13 @@ def create_app(db: Database) -> FastAPI:
         }
 
     @app.post("/api/traces/{trace_id}/branches")
-    def create_branch(trace_id: str, body: CreateBranchRequest) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def create_branch(
+        request: Request,
+        trace_id: str,
+        body: CreateBranchRequest,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
         trace = db.get_trace(trace_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
@@ -83,19 +136,28 @@ def create_app(db: Database) -> FastAPI:
         return _branch_to_dict(branch)
 
     @app.get("/api/traces/{trace_id}/branches")
-    def list_branches_for_trace(trace_id: str) -> list[dict]:
+    @limiter.limit(RATE_LIMIT)
+    def list_branches_for_trace(
+        request: Request, trace_id: str, _auth: None = Depends(verify_api_key)
+    ) -> list[dict]:
         branches = db.branches.list_branches_for_trace(trace_id)
         return [_branch_summary(b) for b in branches]
 
     @app.get("/api/branches/{branch_id}")
-    def get_branch(branch_id: str) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def get_branch(
+        request: Request, branch_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         branch = db.branches.get_branch(branch_id)
         if branch is None:
             raise HTTPException(status_code=404, detail="Branch not found")
         return _branch_to_dict(branch)
 
     @app.delete("/api/branches/{branch_id}")
-    def delete_branch(branch_id: str) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def delete_branch(
+        request: Request, branch_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         branch = db.branches.get_branch(branch_id)
         if branch is None:
             raise HTTPException(status_code=404, detail="Branch not found")
@@ -103,7 +165,13 @@ def create_app(db: Database) -> FastAPI:
         return {"deleted": branch_id}
 
     @app.post("/api/traces/{trace_id}/fork")
-    def fork_trace(trace_id: str, body: ForkRequest) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def fork_trace(
+        request: Request,
+        trace_id: str,
+        body: ForkRequest,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
         trace = db.get_trace(trace_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
@@ -123,23 +191,32 @@ def create_app(db: Database) -> FastAPI:
         return _branch_to_dict(branch)
 
     @app.get("/api/traces/{trace_id}/export")
-    def export_trace_endpoint(trace_id: str) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def export_trace_endpoint(
+        request: Request, trace_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         trace = db.get_trace(trace_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
         return export_trace(trace)
 
     @app.post("/api/traces/import")
-    def import_trace_endpoint(body: dict) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def import_trace_endpoint(
+        request: Request, body: ImportTraceRequest, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         try:
-            trace = import_trace(body)
+            trace = import_trace(body.data)
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         db.save_trace(trace)
         return export_trace(trace)
 
     @app.post("/api/traces/{trace_id}/generate-test")
-    def generate_test(trace_id: str) -> dict:
+    @limiter.limit(RATE_LIMIT)
+    def generate_test(
+        request: Request, trace_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
         trace = db.get_trace(trace_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")

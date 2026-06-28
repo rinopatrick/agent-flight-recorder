@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.0",
     "grpcio>=1.56",
     "grpcio-tools>=1.56",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
