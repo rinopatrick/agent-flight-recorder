@@ -1,0 +1,49 @@
+syntax = "proto3";
+package flight_recorder;
+
+service FlightRecorderService {
+    rpc ListTraces(ListTracesRequest) returns (ListTracesResponse);
+    rpc GetTrace(GetTraceRequest) returns (Trace);
+}
+
+message ListTracesRequest {
+    int32 limit = 1;
+    int32 offset = 2;
+}
+
+message ListTracesResponse {
+    repeated TraceSummary traces = 1;
+    int32 total = 2;
+}
+
+message TraceSummary {
+    string id = 1;
+    string agent_name = 2;
+    int32 step_count = 3;
+    string created_at = 4;
+    string status = 5;
+}
+
+message GetTraceRequest {
+    string id = 1;
+}
+
+message Trace {
+    string id = 1;
+    string agent_name = 2;
+    repeated Step steps = 3;
+    string created_at = 4;
+}
+
+message Step {
+    int32 index = 1;
+    string type = 2;
+    string name = 3;
+    string input = 4;
+    string output = 5;
+    int64 tokens_in = 6;
+    int64 tokens_out = 7;
+    float cost = 8;
+    float duration_ms = 9;
+    string context_snapshot = 10;
+}
