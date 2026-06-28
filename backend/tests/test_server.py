@@ -195,3 +195,48 @@ def test_delete_branch(client: TestClient, db: Database) -> None:
 def test_delete_branch_not_found(client: TestClient) -> None:
     resp = client.delete("/api/branches/nonexistent")
     assert resp.status_code == 404
+
+
+# --- Fork endpoint tests ---
+
+
+def test_fork_trace(client: TestClient, db: Database) -> None:
+    trace = _make_trace("agent-a", n_steps=3)
+    db.save_trace(trace)
+
+    resp = client.post(
+        f"/api/traces/{trace.id}/fork",
+        json={
+            "name": "my-fork",
+            "fork_step_index": 2,
+            "modifications": {"model": "claude-3"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "my-fork"
+    assert data["parent_trace_id"] == trace.id
+    assert data["fork_step_index"] == 2
+    assert data["modifications"] == {"model": "claude-3"}
+    assert "id" in data
+    assert len(data["steps"]) == 2
+
+
+def test_fork_trace_not_found(client: TestClient) -> None:
+    resp = client.post(
+        "/api/traces/nonexistent/fork",
+        json={"name": "fork", "fork_step_index": 0, "modifications": {}},
+    )
+    assert resp.status_code == 404
+
+
+def test_fork_invalid_step_index(client: TestClient, db: Database) -> None:
+    trace = _make_trace("agent-a", n_steps=3)
+    db.save_trace(trace)
+
+    resp = client.post(
+        f"/api/traces/{trace.id}/fork",
+        json={"name": "bad-fork", "fork_step_index": 5, "modifications": {}},
+    )
+    assert resp.status_code == 400
+    assert "fork_step_index" in resp.json()["detail"]

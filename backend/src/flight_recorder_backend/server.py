@@ -3,9 +3,16 @@ from pydantic import BaseModel
 
 from flight_recorder import Branch
 from flight_recorder_backend.db import Database
+from flight_recorder_backend.replay import ReplayEngine
 
 
 class CreateBranchRequest(BaseModel):
+    name: str
+    fork_step_index: int
+    modifications: dict = {}
+
+
+class ForkRequest(BaseModel):
     name: str
     fork_step_index: int
     modifications: dict = {}
@@ -93,6 +100,26 @@ def create_app(db: Database) -> FastAPI:
             raise HTTPException(status_code=404, detail="Branch not found")
         db.branches.delete_branch(branch_id)
         return {"deleted": branch_id}
+
+    @app.post("/api/traces/{trace_id}/fork")
+    def fork_trace(trace_id: str, body: ForkRequest) -> dict:
+        trace = db.get_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        if body.fork_step_index < 0 or body.fork_step_index > len(trace.steps):
+            raise HTTPException(
+                status_code=400,
+                detail=f"fork_step_index must be between 0 and {len(trace.steps)}",
+            )
+        engine = ReplayEngine()
+        branch = engine.create_branch_from_trace(
+            trace=trace,
+            fork_step_index=body.fork_step_index,
+            name=body.name,
+            modifications=body.modifications,
+        )
+        db.branches.save_branch(branch)
+        return _branch_to_dict(branch)
 
     return app
 
