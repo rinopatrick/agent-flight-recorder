@@ -242,6 +242,96 @@ def test_fork_invalid_step_index(client: TestClient, db: Database) -> None:
     assert "fork_step_index" in resp.json()["detail"]
 
 
+# --- Export/Import endpoint tests ---
+
+
+def test_export_trace(client: TestClient, db: Database) -> None:
+    trace = _make_trace("my-agent", n_steps=2)
+    db.save_trace(trace)
+
+    resp = client.get(f"/api/traces/{trace.id}/export")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == trace.id
+    assert data["agent_name"] == "my-agent"
+    assert len(data["steps"]) == 2
+    assert data["steps"][0]["step_type"] == "llm_call"
+    assert "created_at" in data
+    assert "metadata" in data
+
+
+def test_export_trace_not_found(client: TestClient) -> None:
+    resp = client.get("/api/traces/nonexistent/export")
+    assert resp.status_code == 404
+
+
+def test_import_trace(client: TestClient, db: Database) -> None:
+    trace = _make_trace("imported-agent", n_steps=3)
+    export_data = {
+        "id": trace.id,
+        "agent_name": trace.agent_name,
+        "steps": [
+            {
+                "index": s.index,
+                "step_type": s.step_type.value,
+                "name": s.name,
+                "input_data": s.input_data,
+                "output_data": s.output_data,
+                "tokens_in": s.tokens_in,
+                "tokens_out": s.tokens_out,
+                "cost": s.cost,
+                "duration_ms": s.duration_ms,
+                "context_snapshot": s.context_snapshot,
+                "error": s.error,
+            }
+            for s in trace.steps
+        ],
+        "created_at": trace.created_at.isoformat(),
+        "metadata": trace.metadata,
+    }
+
+    resp = client.post("/api/traces/import", json=export_data)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == trace.id
+    assert data["agent_name"] == "imported-agent"
+    assert len(data["steps"]) == 3
+
+    stored = db.get_trace(trace.id)
+    assert stored is not None
+    assert stored.agent_name == "imported-agent"
+    assert len(stored.steps) == 3
+
+
+def test_import_trace_invalid_data(client: TestClient) -> None:
+    resp = client.post("/api/traces/import", json={"bad": "data"})
+    assert resp.status_code == 400
+
+
+def test_export_import_roundtrip(client: TestClient, db: Database, tmp_path: Path) -> None:
+    original = _make_trace("roundtrip-agent", n_steps=2)
+    db.save_trace(original)
+
+    export_resp = client.get(f"/api/traces/{original.id}/export")
+    assert export_resp.status_code == 200
+    export_data = export_resp.json()
+
+    db2 = Database(tmp_path / "test2.db")
+    app2 = create_app(db2)
+    client2 = TestClient(app2)
+
+    import_resp = client2.post("/api/traces/import", json=export_data)
+    assert import_resp.status_code == 200
+    data = import_resp.json()
+    assert data["id"] == original.id
+    assert data["agent_name"] == "roundtrip-agent"
+    assert len(data["steps"]) == 2
+
+    stored = db2.get_trace(original.id)
+    assert stored is not None
+    assert stored.agent_name == "roundtrip-agent"
+
+
 # --- Generate test endpoint ---
 
 

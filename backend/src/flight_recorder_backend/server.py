@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from flight_recorder import Branch
+from flight_recorder import Branch, export_trace, import_trace
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.replay import ReplayEngine
 from flight_recorder_backend.test_generator import TestGenerator
@@ -121,6 +121,22 @@ def create_app(db: Database) -> FastAPI:
         )
         db.branches.save_branch(branch)
         return _branch_to_dict(branch)
+
+    @app.get("/api/traces/{trace_id}/export")
+    def export_trace_endpoint(trace_id: str) -> dict:
+        trace = db.get_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        return export_trace(trace)
+
+    @app.post("/api/traces/import")
+    def import_trace_endpoint(body: dict) -> dict:
+        try:
+            trace = import_trace(body)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.save_trace(trace)
+        return export_trace(trace)
 
     @app.post("/api/traces/{trace_id}/generate-test")
     def generate_test(trace_id: str) -> dict:
