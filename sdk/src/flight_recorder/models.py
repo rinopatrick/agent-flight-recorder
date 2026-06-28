@@ -28,6 +28,24 @@ class Step(BaseModel):
     error: Optional[str] = None
 
 
+class Branch(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    name: str
+    parent_trace_id: str
+    fork_step_index: int
+    modifications: dict[str, Any] = Field(default_factory=dict)
+    steps: list[Step] = Field(default_factory=list)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    def total_cost(self) -> float:
+        return sum(step.cost for step in self.steps)
+
+    def total_duration_ms(self) -> float:
+        return sum(step.duration_ms for step in self.steps)
+
+
 class Trace(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     agent_name: str
