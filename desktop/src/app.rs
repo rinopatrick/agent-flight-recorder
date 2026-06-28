@@ -1,6 +1,6 @@
 use iced::executor;
 use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text, text_input};
-use iced::{Application, Command, Element, Length, Settings, Theme};
+use iced::{clipboard, Application, Command, Element, Length, Settings, Theme};
 use serde::{Deserialize, Serialize};
 
 const BACKEND_URL: &str = "http://127.0.0.1:8420";
@@ -22,6 +22,9 @@ pub enum Message {
     BranchSelected(String),
     BranchLoaded(BranchDetail),
     ToggleCostPanel,
+    GenerateTest,
+    TestGenerated(String),
+    CopyTestToClipboard,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +95,8 @@ pub struct App {
     fork_name: String,
     fork_model: String,
     show_cost_panel: bool,
+    generated_test: Option<String>,
+    test_loading: bool,
 }
 
 impl Application for App {
@@ -112,6 +117,8 @@ impl Application for App {
                 fork_name: String::new(),
                 fork_model: String::new(),
                 show_cost_panel: false,
+                generated_test: None,
+                test_loading: false,
             },
             fetch_traces(),
         )
@@ -129,6 +136,8 @@ impl Application for App {
             Message::TraceSelected(id) => {
                 self.selected_branch = None;
                 self.branches.clear();
+                self.generated_test = None;
+                self.test_loading = false;
                 return fetch_trace_detail(id);
             }
             Message::TraceLoaded(detail) => {
@@ -136,6 +145,8 @@ impl Application for App {
                 self.selected_trace = Some(detail);
                 self.selected_step = None;
                 self.selected_branch = None;
+                self.generated_test = None;
+                self.test_loading = false;
                 return fetch_branches(trace_id);
             }
             Message::StepSelected(index) => {
@@ -193,6 +204,23 @@ impl Application for App {
             }
             Message::ToggleCostPanel => {
                 self.show_cost_panel = !self.show_cost_panel;
+            }
+            Message::GenerateTest => {
+                if let Some(trace) = &self.selected_trace {
+                    self.test_loading = true;
+                    self.generated_test = None;
+                    let trace_id = trace.id.clone();
+                    return generate_test(trace_id);
+                }
+            }
+            Message::TestGenerated(code) => {
+                self.test_loading = false;
+                self.generated_test = Some(code);
+            }
+            Message::CopyTestToClipboard => {
+                if let Some(code) = &self.generated_test {
+                    return clipboard::write(code.clone());
+                }
             }
         }
         Command::none()
@@ -296,6 +324,29 @@ fn fetch_branch_detail(branch_id: String) -> Command<Message> {
                     Ok(detail) => Message::BranchLoaded(detail),
                     Err(_) => Message::Noop,
                 },
+                Err(_) => Message::Noop,
+            }
+        },
+        |msg| msg,
+    )
+}
+
+fn generate_test(trace_id: String) -> Command<Message> {
+    let url = format!("{}/api/traces/{}/generate-test", BACKEND_URL, trace_id);
+    Command::perform(
+        async move {
+            let client = reqwest::Client::new();
+            match client.post(&url).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.text().await {
+                            Ok(code) => Message::TestGenerated(code),
+                            Err(_) => Message::Noop,
+                        }
+                    } else {
+                        Message::Noop
+                    }
+                }
                 Err(_) => Message::Noop,
             }
         },
@@ -641,13 +692,57 @@ impl App {
             _ => text("Select a step to inspect").size(14).into(),
         };
 
-        container(
-            column![text("Inspector").size(20), horizontal_rule(1), content]
-                .spacing(8)
-                .padding(12),
-        )
-        .height(Length::FillPortion(1))
-        .into()
+        let mut inspector_col = column![
+            text("Inspector").size(20),
+            horizontal_rule(1),
+            content,
+        ]
+        .spacing(8)
+        .padding(12);
+
+        if self.selected_trace.is_some() {
+            inspector_col = inspector_col.push(horizontal_rule(1));
+
+            let gen_btn_label = if self.test_loading {
+                "Generating..."
+            } else {
+                "Generate Test"
+            };
+            let mut gen_btn = button(text(gen_btn_label).size(13)).padding(6);
+            if !self.test_loading {
+                gen_btn = gen_btn.on_press(Message::GenerateTest);
+            }
+            inspector_col = inspector_col.push(gen_btn);
+
+            if let Some(code) = &self.generated_test {
+                let test_content: Element<'_, Message> = column![
+                    row![
+                        text("Generated Test").size(16),
+                        button(text("Copy").size(12))
+                            .on_press(Message::CopyTestToClipboard)
+                            .padding(4),
+                    ]
+                    .spacing(8)
+                    .align_items(iced::Alignment::Center),
+                    horizontal_rule(1),
+                    scrollable(
+                        container(
+                            text(code.as_str()).size(12)
+                        )
+                        .padding(8)
+                    )
+                    .height(Length::Fill),
+                ]
+                .spacing(4)
+                .into();
+
+                inspector_col = inspector_col.push(test_content);
+            }
+        }
+
+        container(inspector_col)
+            .height(Length::FillPortion(1))
+            .into()
     }
 }
 
