@@ -1,0 +1,134 @@
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, ForeignKey
+from sqlalchemy.orm import Session, declarative_base, relationship
+
+from flight_recorder.models import Branch, Step, StepType
+
+Base = declarative_base()
+
+
+class BranchRow(Base):
+    __tablename__ = "branches"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    parent_trace_id = Column(String, nullable=False, index=True)
+    fork_step_index = Column(Integer, nullable=False)
+    modifications_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, nullable=False)
+
+    steps = relationship("BranchStepRow", back_populates="branch", cascade="all, delete-orphan", order_by="BranchStepRow.index")
+
+
+class BranchStepRow(Base):
+    __tablename__ = "branch_steps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    branch_id = Column(String, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False, index=True)
+    index = Column(Integer, nullable=False)
+    step_type = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    input_json = Column(Text, nullable=False, default="{}")
+    output_json = Column(Text, nullable=False, default="{}")
+    tokens_in = Column(Integer, nullable=True)
+    tokens_out = Column(Integer, nullable=True)
+    cost = Column(Float, nullable=False, default=0.0)
+    duration_ms = Column(Float, nullable=False, default=0.0)
+    context_json = Column(Text, nullable=True)
+    error = Column(String, nullable=True)
+
+    branch = relationship("BranchRow", back_populates="steps")
+
+
+class BranchStorage:
+    def __init__(self, db_path: Path) -> None:
+        self._engine = create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(self._engine)
+
+    def save_branch(self, branch: Branch) -> None:
+        with Session(self._engine) as session:
+            row = BranchRow(
+                id=branch.id,
+                name=branch.name,
+                parent_trace_id=branch.parent_trace_id,
+                fork_step_index=branch.fork_step_index,
+                modifications_json=json.dumps(branch.modifications),
+                created_at=branch.created_at,
+            )
+            session.add(row)
+            for step in branch.steps:
+                step_row = BranchStepRow(
+                    branch_id=branch.id,
+                    index=step.index,
+                    step_type=step.step_type.value,
+                    name=step.name,
+                    input_json=json.dumps(step.input_data),
+                    output_json=json.dumps(step.output_data),
+                    tokens_in=step.tokens_in,
+                    tokens_out=step.tokens_out,
+                    cost=step.cost,
+                    duration_ms=step.duration_ms,
+                    context_json=json.dumps(step.context_snapshot) if step.context_snapshot is not None else None,
+                    error=step.error,
+                )
+                session.add(step_row)
+            session.commit()
+
+    def get_branch(self, branch_id: str) -> Branch | None:
+        with Session(self._engine) as session:
+            row = session.get(BranchRow, branch_id)
+            if row is None:
+                return None
+            return self._row_to_branch(row)
+
+    def list_branches(self, limit: int = 50, offset: int = 0) -> list[Branch]:
+        with Session(self._engine) as session:
+            rows = (
+                session.query(BranchRow)
+                .order_by(BranchRow.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            return [self._row_to_branch(r) for r in rows]
+
+    def list_branches_for_trace(self, trace_id: str) -> list[Branch]:
+        with Session(self._engine) as session:
+            rows = (
+                session.query(BranchRow)
+                .filter(BranchRow.parent_trace_id == trace_id)
+                .order_by(BranchRow.created_at.desc())
+                .all()
+            )
+            return [self._row_to_branch(r) for r in rows]
+
+    @staticmethod
+    def _row_to_branch(row: BranchRow) -> Branch:
+        steps = [
+            Step(
+                index=s.index,
+                step_type=StepType(s.step_type),
+                name=s.name,
+                input_data=json.loads(s.input_json),
+                output_data=json.loads(s.output_json),
+                tokens_in=s.tokens_in,
+                tokens_out=s.tokens_out,
+                cost=s.cost,
+                duration_ms=s.duration_ms,
+                context_snapshot=json.loads(s.context_json) if s.context_json is not None else None,
+                error=s.error,
+            )
+            for s in row.steps
+        ]
+        return Branch(
+            id=row.id,
+            name=row.name,
+            parent_trace_id=row.parent_trace_id,
+            fork_step_index=row.fork_step_index,
+            modifications=json.loads(row.modifications_json),
+            steps=steps,
+            created_at=row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at,
+        )
