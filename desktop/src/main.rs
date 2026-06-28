@@ -1,3 +1,6 @@
-fn main() {
-    println!("Agent Flight Recorder — Desktop UI");
+mod app;
+mod views;
+
+fn main() -> iced::Result {
+    app::run()
 }
