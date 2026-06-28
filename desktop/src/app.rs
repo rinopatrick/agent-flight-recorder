@@ -1,6 +1,9 @@
 use iced::executor;
-use iced::widget::{column, container, horizontal_rule, row, scrollable, text};
+use iced::widget::{button, column, container, horizontal_rule, row, scrollable, text};
 use iced::{Application, Command, Element, Length, Settings, Theme};
+use serde::Deserialize;
+
+const BACKEND_URL: &str = "http://127.0.0.1:8420";
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -11,7 +14,7 @@ pub enum Message {
     Noop,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TraceSummary {
     pub id: String,
     pub agent_name: String,
@@ -19,14 +22,14 @@ pub struct TraceSummary {
     pub total_cost: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TraceDetail {
     pub id: String,
     pub agent_name: String,
     pub steps: Vec<StepDetail>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct StepDetail {
     pub index: usize,
     pub step_type: String,
@@ -41,7 +44,6 @@ pub struct App {
     traces: Vec<TraceSummary>,
     selected_trace: Option<TraceDetail>,
     selected_step: Option<usize>,
-    _backend_url: String,
 }
 
 impl Application for App {
@@ -56,9 +58,8 @@ impl Application for App {
                 traces: Vec::new(),
                 selected_trace: None,
                 selected_step: None,
-                _backend_url: "http://127.0.0.1:50051".to_string(),
             },
-            Command::none(),
+            fetch_traces(),
         )
     }
 
@@ -71,8 +72,8 @@ impl Application for App {
             Message::TracesLoaded(traces) => {
                 self.traces = traces;
             }
-            Message::TraceSelected(_id) => {
-                // TODO: fetch trace detail from backend
+            Message::TraceSelected(id) => {
+                return fetch_trace_detail(id);
             }
             Message::TraceLoaded(detail) => {
                 self.selected_trace = Some(detail);
@@ -108,13 +109,46 @@ impl Application for App {
     }
 }
 
+fn fetch_traces() -> Command<Message> {
+    let url = format!("{}/api/traces", BACKEND_URL);
+    Command::perform(
+        async move {
+            match reqwest::get(&url).await {
+                Ok(resp) => match resp.json::<Vec<TraceSummary>>().await {
+                    Ok(traces) => Message::TracesLoaded(traces),
+                    Err(_) => Message::Noop,
+                },
+                Err(_) => Message::Noop,
+            }
+        },
+        |msg| msg,
+    )
+}
+
+fn fetch_trace_detail(id: String) -> Command<Message> {
+    let url = format!("{}/api/traces/{}", BACKEND_URL, id);
+    Command::perform(
+        async move {
+            match reqwest::get(&url).await {
+                Ok(resp) => match resp.json::<TraceDetail>().await {
+                    Ok(detail) => Message::TraceLoaded(detail),
+                    Err(_) => Message::Noop,
+                },
+                Err(_) => Message::Noop,
+            }
+        },
+        |msg| msg,
+    )
+}
+
 impl App {
     fn view_sidebar(&self) -> Element<'_, Message> {
         let trace_items: Vec<Element<'_, Message>> = self
             .traces
             .iter()
             .map(|t| {
-                let item = container(
+                let id = t.id.clone();
+                button(
                     column![
                         text(&t.agent_name).size(14),
                         text(format!("{} steps · ${:.4}", t.step_count, t.total_cost)).size(12),
@@ -122,8 +156,9 @@ impl App {
                     .spacing(4)
                     .padding(8),
                 )
-                .width(Length::Fill);
-                item.into()
+                .on_press(Message::TraceSelected(id))
+                .width(Length::Fill)
+                .into()
             })
             .collect();
 
@@ -148,7 +183,8 @@ impl App {
                     .steps
                     .iter()
                     .map(|s| {
-                        container(
+                        let idx = s.index;
+                        button(
                             row![
                                 text(format!("[{}]", s.step_type)).size(13),
                                 text(&s.name).size(13),
@@ -157,6 +193,7 @@ impl App {
                             .spacing(12)
                             .padding(6),
                         )
+                        .on_press(Message::StepSelected(idx))
                         .width(Length::Fill)
                         .into()
                     })
