@@ -1,6 +1,14 @@
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
+from flight_recorder import Branch
 from flight_recorder_backend.db import Database
+
+
+class CreateBranchRequest(BaseModel):
+    name: str
+    fork_step_index: int
+    modifications: dict = {}
 
 
 def create_app(db: Database) -> FastAPI:
@@ -52,4 +60,75 @@ def create_app(db: Database) -> FastAPI:
             ],
         }
 
+    @app.post("/api/traces/{trace_id}/branches")
+    def create_branch(trace_id: str, body: CreateBranchRequest) -> dict:
+        trace = db.get_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        branch = Branch(
+            name=body.name,
+            parent_trace_id=trace_id,
+            fork_step_index=body.fork_step_index,
+            modifications=body.modifications,
+        )
+        db.branches.save_branch(branch)
+        return _branch_to_dict(branch)
+
+    @app.get("/api/traces/{trace_id}/branches")
+    def list_branches_for_trace(trace_id: str) -> list[dict]:
+        branches = db.branches.list_branches_for_trace(trace_id)
+        return [_branch_summary(b) for b in branches]
+
+    @app.get("/api/branches/{branch_id}")
+    def get_branch(branch_id: str) -> dict:
+        branch = db.branches.get_branch(branch_id)
+        if branch is None:
+            raise HTTPException(status_code=404, detail="Branch not found")
+        return _branch_to_dict(branch)
+
+    @app.delete("/api/branches/{branch_id}")
+    def delete_branch(branch_id: str) -> dict:
+        branch = db.branches.get_branch(branch_id)
+        if branch is None:
+            raise HTTPException(status_code=404, detail="Branch not found")
+        db.branches.delete_branch(branch_id)
+        return {"deleted": branch_id}
+
     return app
+
+
+def _branch_summary(branch: Branch) -> dict:
+    return {
+        "id": branch.id,
+        "name": branch.name,
+        "parent_trace_id": branch.parent_trace_id,
+        "fork_step_index": branch.fork_step_index,
+        "created_at": branch.created_at.isoformat(),
+    }
+
+
+def _branch_to_dict(branch: Branch) -> dict:
+    return {
+        "id": branch.id,
+        "name": branch.name,
+        "parent_trace_id": branch.parent_trace_id,
+        "fork_step_index": branch.fork_step_index,
+        "modifications": branch.modifications,
+        "created_at": branch.created_at.isoformat(),
+        "steps": [
+            {
+                "index": s.index,
+                "step_type": s.step_type.value,
+                "name": s.name,
+                "input_data": s.input_data,
+                "output_data": s.output_data,
+                "tokens_in": s.tokens_in,
+                "tokens_out": s.tokens_out,
+                "cost": s.cost,
+                "duration_ms": s.duration_ms,
+                "context_snapshot": s.context_snapshot,
+                "error": s.error,
+            }
+            for s in branch.steps
+        ],
+    }

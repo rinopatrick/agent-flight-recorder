@@ -105,6 +105,13 @@ class BranchStorage:
             )
             return [self._row_to_branch(r) for r in rows]
 
+    def delete_branch(self, branch_id: str) -> None:
+        with Session(self._engine) as session:
+            row = session.get(BranchRow, branch_id)
+            if row is not None:
+                session.delete(row)
+                session.commit()
+
     @staticmethod
     def _row_to_branch(row: BranchRow) -> Branch:
         steps = [
