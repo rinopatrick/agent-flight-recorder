@@ -7,8 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from flight_recorder import Annotation, Branch, export_trace, import_trace
-from flight_recorder.models import TraceSession
 from flight_recorder.log_config import get_logger
+from flight_recorder.models import TraceSession
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded

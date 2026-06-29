@@ -1,7 +1,9 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 from flight_recorder import Step, StepType, Trace
+
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.server import create_app
 

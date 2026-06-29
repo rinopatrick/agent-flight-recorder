@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from flight_recorder import Step, StepType, Trace
+
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.server import create_app
 
@@ -18,7 +19,6 @@ def test_create_and_get_annotations(tmp_path: Path):
     client = TestClient(app)
     resp = client.post(f"/api/traces/{trace_id}/annotations", json={"content": "slow trace", "tags": ["perf"]})
     assert resp.status_code == 200
-    ann_id = resp.json()["id"]
     resp = client.get(f"/api/traces/{trace_id}/annotations")
     assert resp.status_code == 200
     assert len(resp.json()) == 1

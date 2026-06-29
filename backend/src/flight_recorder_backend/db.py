@@ -1,7 +1,12 @@
 import os
 from pathlib import Path
 
-from flight_recorder import AnnotationStorage, BranchStorage, SessionStorage, TraceStorage
+from flight_recorder import (
+    AnnotationStorage,
+    BranchStorage,
+    SessionStorage,
+    TraceStorage,
+)
 from flight_recorder.log_config import get_logger
 
 logger = get_logger(__name__)
