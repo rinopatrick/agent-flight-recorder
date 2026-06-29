@@ -53,8 +53,13 @@ class BranchStepRow(Base):  # type: ignore[misc, valid-type]
 
 
 class BranchStorage:
-    def __init__(self, db_path: Path) -> None:
-        self._engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    def __init__(self, db_path: Path | None = None, db_url: str | None = None) -> None:
+        if db_url:
+            self._engine = create_engine(db_url)
+        elif db_path:
+            self._engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        else:
+            raise ValueError("Either db_path or db_url must be provided")
         Base.metadata.create_all(self._engine)
 
     def save_branch(self, branch: Branch) -> None:

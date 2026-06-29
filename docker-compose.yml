@@ -1,14 +1,29 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flight
+      POSTGRES_PASSWORD: flight
+      POSTGRES_DB: flight_recorder
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: .
     ports:
       - "8420:8420"
-    volumes:
-      - flight-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      - FLIGHT_RECORDER_DB_PATH=/app/data/traces.db
+      - FLIGHT_RECORDER_DB_URL=postgresql://flight:flight@db:5432/flight_recorder
       - FLIGHT_RECORDER_API_KEY=${FLIGHT_RECORDER_API_KEY:-}
       - FLIGHT_RECORDER_RATE_LIMIT=${FLIGHT_RECORDER_RATE_LIMIT:-100/minute}
     restart: unless-stopped
@@ -20,4 +35,4 @@ services:
       start_period: 5s
 
 volumes:
-  flight-data:
+  pgdata:
