@@ -70,3 +70,13 @@ class TraceFilter(BaseModel):
     max_cost: Optional[float] = None
     step_type: Optional[StepType] = None
     has_error: Optional[bool] = None
+
+
+class TraceSession(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    name: str
+    trace_ids: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
