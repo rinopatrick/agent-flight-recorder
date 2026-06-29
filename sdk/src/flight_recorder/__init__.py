@@ -9,11 +9,13 @@ from flight_recorder.export import (
 )
 from flight_recorder.models import Branch, Step, StepType, Trace
 from flight_recorder.recorder import clear_last_trace, get_last_trace, record
+from flight_recorder.session_storage import SessionStorage
 from flight_recorder.storage import TraceStorage
 
 __all__ = [
     "Branch",
     "BranchStorage",
+    "SessionStorage",
     "Step",
     "StepType",
     "Trace",
