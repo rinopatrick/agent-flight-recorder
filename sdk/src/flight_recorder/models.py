@@ -60,3 +60,13 @@ class Trace(BaseModel):
 
     def total_duration_ms(self) -> float:
         return sum(step.duration_ms for step in self.steps)
+
+
+class TraceFilter(BaseModel):
+    agent_name: Optional[str] = None
+    created_after: Optional[datetime] = None
+    created_before: Optional[datetime] = None
+    min_cost: Optional[float] = None
+    max_cost: Optional[float] = None
+    step_type: Optional[StepType] = None
+    has_error: Optional[bool] = None
