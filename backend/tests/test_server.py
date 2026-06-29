@@ -81,7 +81,11 @@ def test_get_trace_not_found(client: TestClient) -> None:
 def test_health(client: TestClient) -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "version" in data
+    assert "database" in data
+    assert "timestamp" in data
 
 
 # --- Branch API tests ---

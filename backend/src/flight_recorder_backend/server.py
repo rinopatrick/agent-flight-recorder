@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.websockets import WebSocket
 
@@ -101,7 +103,35 @@ def create_app(db: Database) -> FastAPI:
     @app.get("/api/health")
     @limiter.limit(RATE_LIMIT)
     def health(request: Request) -> dict:
-        return {"status": "ok"}
+        db_status = "ok"
+        try:
+            with Session(db._engine) as session:
+                session.execute(text("SELECT 1"))
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+
+        return {
+            "status": "ok" if db_status == "ok" else "degraded",
+            "version": "0.4.0",
+            "database": db_status,
+            "timestamp": time.time(),
+        }
+
+    @app.get("/api/metrics")
+    @limiter.limit(RATE_LIMIT)
+    def metrics(
+        request: Request, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        traces = db.list_traces(limit=1000)
+        total_cost = sum(t.total_cost() for t in traces)
+        total_steps = sum(len(t.steps) for t in traces)
+
+        return {
+            "total_traces": len(traces),
+            "total_steps": total_steps,
+            "total_cost": round(total_cost, 4),
+            "avg_steps_per_trace": round(total_steps / len(traces), 1) if traces else 0,
+        }
 
     @app.get("/api/traces")
     @limiter.limit(RATE_LIMIT)
