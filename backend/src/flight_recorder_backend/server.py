@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from flight_recorder import Branch, export_trace, import_trace
+from flight_recorder import Annotation, Branch, export_trace, import_trace
 from flight_recorder.models import TraceSession
 from flight_recorder.log_config import get_logger
 from pydantic import BaseModel
@@ -35,6 +35,11 @@ class ForkRequest(BaseModel):
 
 class ImportTraceRequest(BaseModel):
     data: dict
+
+
+class CreateAnnotationRequest(BaseModel):
+    content: str
+    tags: list[str] = []
 
 
 class CreateSessionRequest(BaseModel):
@@ -351,7 +356,66 @@ def create_app(db: Database) -> FastAPI:
         db.sessions.remove_trace_from_session(session_id, trace_id)
         return {"removed": trace_id}
 
+    # --- Annotation endpoints ---
+
+    @app.post("/api/traces/{trace_id}/annotations")
+    @limiter.limit(RATE_LIMIT)
+    def create_annotation(
+        request: Request,
+        trace_id: str,
+        body: CreateAnnotationRequest,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
+        trace = db.get_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        annotation = Annotation(trace_id=trace_id, content=body.content, tags=body.tags)
+        db.annotations.save_annotation(annotation)
+        return _annotation_to_dict(annotation)
+
+    @app.get("/api/traces/{trace_id}/annotations")
+    @limiter.limit(RATE_LIMIT)
+    def list_annotations(
+        request: Request, trace_id: str, _auth: None = Depends(verify_api_key)
+    ) -> list[dict]:
+        annotations = db.annotations.get_annotations_for_trace(trace_id)
+        return [_annotation_to_dict(a) for a in annotations]
+
+    @app.delete("/api/annotations/{annotation_id}")
+    @limiter.limit(RATE_LIMIT)
+    def delete_annotation(
+        request: Request, annotation_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        db.annotations.delete_annotation(annotation_id)
+        return {"deleted": annotation_id}
+
+    @app.post("/api/annotations/{annotation_id}/tags/{tag}")
+    @limiter.limit(RATE_LIMIT)
+    def add_tag(
+        request: Request, annotation_id: str, tag: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        db.annotations.add_tag(annotation_id, tag)
+        return {"added": tag}
+
+    @app.delete("/api/annotations/{annotation_id}/tags/{tag}")
+    @limiter.limit(RATE_LIMIT)
+    def remove_tag(
+        request: Request, annotation_id: str, tag: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        db.annotations.remove_tag(annotation_id, tag)
+        return {"removed": tag}
+
     return app
+
+
+def _annotation_to_dict(annotation: Annotation) -> dict:
+    return {
+        "id": annotation.id,
+        "trace_id": annotation.trace_id,
+        "content": annotation.content,
+        "tags": annotation.tags,
+        "created_at": annotation.created_at.isoformat(),
+    }
 
 
 def _session_to_dict(session: TraceSession) -> dict:
