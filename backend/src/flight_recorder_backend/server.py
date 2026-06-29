@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from flight_recorder import Branch, export_trace, import_trace
+from flight_recorder.models import TraceSession
 from flight_recorder.log_config import get_logger
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -34,6 +35,10 @@ class ForkRequest(BaseModel):
 
 class ImportTraceRequest(BaseModel):
     data: dict
+
+
+class CreateSessionRequest(BaseModel):
+    name: str
 
 
 API_KEY = os.environ.get("FLIGHT_RECORDER_API_KEY")
@@ -287,7 +292,76 @@ def create_app(db: Database) -> FastAPI:
         test_code = generator.generate_test(trace)
         return {"test_code": test_code, "trace_id": trace_id}
 
+    # --- Session endpoints ---
+
+    @app.post("/api/sessions")
+    @limiter.limit(RATE_LIMIT)
+    def create_session(
+        request: Request,
+        body: CreateSessionRequest,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
+        session = TraceSession(name=body.name)
+        db.sessions.save_session(session)
+        return _session_to_dict(session)
+
+    @app.get("/api/sessions")
+    @limiter.limit(RATE_LIMIT)
+    def list_sessions(
+        request: Request, _auth: None = Depends(verify_api_key)
+    ) -> list[dict]:
+        sessions = db.sessions.list_sessions()
+        return [_session_to_dict(s) for s in sessions]
+
+    @app.get("/api/sessions/{session_id}")
+    @limiter.limit(RATE_LIMIT)
+    def get_session(
+        request: Request, session_id: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        session = db.sessions.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return _session_to_dict(session)
+
+    @app.post("/api/sessions/{session_id}/traces/{trace_id}")
+    @limiter.limit(RATE_LIMIT)
+    def add_trace_to_session(
+        request: Request,
+        session_id: str,
+        trace_id: str,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
+        session = db.sessions.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        db.sessions.add_trace_to_session(session_id, trace_id)
+        return {"added": trace_id}
+
+    @app.delete("/api/sessions/{session_id}/traces/{trace_id}")
+    @limiter.limit(RATE_LIMIT)
+    def remove_trace_from_session(
+        request: Request,
+        session_id: str,
+        trace_id: str,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
+        session = db.sessions.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        db.sessions.remove_trace_from_session(session_id, trace_id)
+        return {"removed": trace_id}
+
     return app
+
+
+def _session_to_dict(session: TraceSession) -> dict:
+    return {
+        "id": session.id,
+        "name": session.name,
+        "trace_ids": session.trace_ids,
+        "created_at": session.created_at.isoformat(),
+        "metadata": session.metadata,
+    }
 
 
 def _branch_summary(branch: Branch) -> dict:
