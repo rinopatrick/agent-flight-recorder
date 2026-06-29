@@ -1,6 +1,7 @@
 """Agent Flight Recorder SDK."""
 
 from flight_recorder.annotation_storage import AnnotationStorage
+from flight_recorder.auto_inject import auto_record, disable_auto_record
 from flight_recorder.branch_storage import BranchStorage
 from flight_recorder.export import (
     export_to_file,
@@ -37,7 +38,9 @@ __all__ = [
     "TraceFilter",
     "TraceSession",
     "TraceStorage",
+    "auto_record",
     "clear_last_trace",
+    "disable_auto_record",
     "export_to_file",
     "export_trace",
     "get_last_trace",
