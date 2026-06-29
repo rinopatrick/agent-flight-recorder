@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+ruff.toml
+.pre-commit-config.yaml
+.github/
+.superpowers/
+desktop/target/
+*.db
+.git/
