@@ -107,6 +107,46 @@ def create_app(db: Database) -> FastAPI:
             for t in traces
         ]
 
+    @app.get("/api/traces/search")
+    @limiter.limit(RATE_LIMIT)
+    def search_traces_endpoint(
+        request: Request,
+        agent_name: str | None = None,
+        min_cost: float | None = None,
+        max_cost: float | None = None,
+        step_type: str | None = None,
+        has_error: bool | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        _auth: None = Depends(verify_api_key),
+    ) -> list[dict]:
+        from datetime import datetime
+
+        from flight_recorder.models import StepType, TraceFilter
+
+        filter = TraceFilter(
+            agent_name=agent_name,
+            min_cost=min_cost,
+            max_cost=max_cost,
+            step_type=StepType(step_type) if step_type else None,
+            has_error=has_error,
+            created_after=datetime.fromisoformat(created_after) if created_after else None,
+            created_before=datetime.fromisoformat(created_before) if created_before else None,
+        )
+        traces = db.search_traces(filter, limit=limit, offset=offset)
+        return [
+            {
+                "id": t.id,
+                "agent_name": t.agent_name,
+                "step_count": len(t.steps),
+                "created_at": t.created_at.isoformat(),
+                "total_cost": t.total_cost(),
+            }
+            for t in traces
+        ]
+
     @app.get("/api/traces/{trace_id}")
     @limiter.limit(RATE_LIMIT)
     def get_trace(
