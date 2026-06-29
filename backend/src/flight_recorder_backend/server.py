@@ -157,6 +157,30 @@ def create_app(db: Database) -> FastAPI:
             for t in traces
         ]
 
+    @app.get("/api/traces/compare")
+    @limiter.limit(RATE_LIMIT)
+    def compare_traces(
+        request: Request, a: str, b: str, _auth: None = Depends(verify_api_key)
+    ) -> dict:
+        from flight_recorder.models import TraceComparison
+
+        trace_a = db.get_trace(a)
+        trace_b = db.get_trace(b)
+        if trace_a is None or trace_b is None:
+            raise HTTPException(status_code=404, detail="One or both traces not found")
+        comp = TraceComparison(trace_a=trace_a, trace_b=trace_b)
+        return {
+            "trace_a_id": a,
+            "trace_b_id": b,
+            "cost_diff": comp.cost_diff,
+            "duration_diff": comp.duration_diff,
+            "step_count_diff": comp.step_count_diff,
+            "steps_a": len(trace_a.steps),
+            "steps_b": len(trace_b.steps),
+            "cost_a": trace_a.total_cost(),
+            "cost_b": trace_b.total_cost(),
+        }
+
     @app.get("/api/traces/{trace_id}")
     @limiter.limit(RATE_LIMIT)
     def get_trace(
