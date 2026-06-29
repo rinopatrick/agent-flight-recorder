@@ -426,7 +426,7 @@ def create_app(db: Database) -> FastAPI:
         connected_clients.difference_update(dead)
 
     @app.websocket("/api/ws/traces")
-    async def websocket_traces(websocket: WebSocket):
+    async def websocket_traces(websocket: WebSocket) -> None:
         await websocket.accept()
         connected_clients.add(websocket)
         try:

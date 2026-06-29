@@ -1,4 +1,5 @@
 import pytest
+
 from flight_recorder.models import Step, StepType, Trace, TraceComparison
 
 
