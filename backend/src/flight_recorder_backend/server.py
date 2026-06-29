@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -13,6 +14,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.websockets import WebSocket
 
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.replay import ReplayEngine
@@ -84,6 +86,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 def create_app(db: Database) -> FastAPI:
     app = FastAPI()
+    connected_clients: set[WebSocket] = set()
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
     app.add_middleware(
@@ -299,7 +302,7 @@ def create_app(db: Database) -> FastAPI:
 
     @app.post("/api/traces/import")
     @limiter.limit(RATE_LIMIT)
-    def import_trace_endpoint(
+    async def import_trace_endpoint(
         request: Request, body: ImportTraceRequest, _auth: None = Depends(verify_api_key)
     ) -> dict:
         try:
@@ -307,6 +310,7 @@ def create_app(db: Database) -> FastAPI:
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         db.save_trace(trace)
+        asyncio.create_task(broadcast_event({"event_type": "trace_saved", "trace_id": trace.id}))
         return export_trace(trace)
 
     @app.post("/api/traces/{trace_id}/generate-test")
@@ -379,6 +383,27 @@ def create_app(db: Database) -> FastAPI:
             raise HTTPException(status_code=404, detail="Session not found")
         db.sessions.remove_trace_from_session(session_id, trace_id)
         return {"removed": trace_id}
+
+    # --- WebSocket endpoint ---
+
+    async def broadcast_event(event: dict) -> None:
+        dead = set()
+        for client in connected_clients:
+            try:
+                await client.send_json(event)
+            except Exception:
+                dead.add(client)
+        connected_clients.difference_update(dead)
+
+    @app.websocket("/api/ws/traces")
+    async def websocket_traces(websocket: WebSocket):
+        await websocket.accept()
+        connected_clients.add(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            connected_clients.discard(websocket)
 
     # --- Annotation endpoints ---
 
