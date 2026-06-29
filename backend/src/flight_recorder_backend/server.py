@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -6,14 +5,14 @@ from collections.abc import Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from flight_recorder import Branch, export_trace, import_trace
+from flight_recorder.log_config import get_logger
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from flight_recorder import Branch, export_trace, import_trace
-from flight_recorder.log_config import get_logger
 from flight_recorder_backend.db import Database
 from flight_recorder_backend.replay import ReplayEngine
 from flight_recorder_backend.test_generator import TestGenerator

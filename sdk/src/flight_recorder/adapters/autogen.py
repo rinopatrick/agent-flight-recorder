@@ -1,5 +1,4 @@
-import time
-from typing import Any, Optional
+from typing import Any
 
 from flight_recorder.adapters.base import BaseAdapter
 from flight_recorder.models import Step, StepType, Trace

@@ -1,6 +1,8 @@
 import ast
+
 import pytest
 from flight_recorder.models import Step, StepType, Trace
+
 from flight_recorder_backend.test_generator import TestGenerator
 
 

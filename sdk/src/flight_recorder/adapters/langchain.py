@@ -1,5 +1,4 @@
 import time
-import uuid
 from typing import Any
 
 from flight_recorder.adapters.base import BaseAdapter

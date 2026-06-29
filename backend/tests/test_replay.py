@@ -1,5 +1,4 @@
 import pytest
-
 from flight_recorder import Step, StepType, Trace
 from flight_recorder.models import Branch
 

@@ -1,10 +1,7 @@
-from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
-from flight_recorder.models import Branch, Step, StepType
 from flight_recorder.branch_storage import BranchStorage
+from flight_recorder.models import Branch, Step, StepType
 
 
 def _make_branch(

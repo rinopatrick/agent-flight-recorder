@@ -1,8 +1,17 @@
 import json
-from datetime import datetime, timezone
+from datetime import timezone
 from pathlib import Path
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, ForeignKey
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+)
 from sqlalchemy.orm import Session, declarative_base, relationship
 
 from flight_recorder.models import Branch, Step, StepType
@@ -18,7 +27,7 @@ class BranchRow(Base):  # type: ignore[misc, valid-type]
     parent_trace_id = Column(String, nullable=False, index=True)
     fork_step_index = Column(Integer, nullable=False)
     modifications_json = Column(Text, nullable=False, default="{}")
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, index=True)
 
     steps = relationship("BranchStepRow", back_populates="branch", cascade="all, delete-orphan", order_by="BranchStepRow.index")
 
@@ -45,7 +54,7 @@ class BranchStepRow(Base):  # type: ignore[misc, valid-type]
 
 class BranchStorage:
     def __init__(self, db_path: Path) -> None:
-        self._engine = create_engine(f"sqlite:///{db_path}")
+        self._engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
         Base.metadata.create_all(self._engine)
 
     def save_branch(self, branch: Branch) -> None:

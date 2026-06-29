@@ -1,7 +1,4 @@
-import time
-import uuid
 
-import pytest
 
 from flight_recorder.adapters.autogen import AutoGenAdapter
 from flight_recorder.adapters.base import BaseAdapter

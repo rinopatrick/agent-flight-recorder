@@ -1,8 +1,6 @@
 import time
 import uuid
 
-import pytest
-
 from flight_recorder.adapters.base import BaseAdapter
 from flight_recorder.adapters.crewai import CrewAIAdapter
 from flight_recorder.models import StepType, Trace

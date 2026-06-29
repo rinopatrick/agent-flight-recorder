@@ -1,8 +1,17 @@
 import json
-from datetime import datetime, timezone
+from datetime import timezone
 from pathlib import Path
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, ForeignKey
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+)
 from sqlalchemy.orm import Session, declarative_base, relationship
 
 from flight_recorder.log_config import get_logger
@@ -17,8 +26,8 @@ class TraceRow(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "traces"
 
     id = Column(String, primary_key=True)
-    agent_name = Column(String, nullable=False)
-    created_at = Column(DateTime, nullable=False)
+    agent_name = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, index=True)
     metadata_json = Column(Text, nullable=False, default="{}")
 
     steps = relationship("StepRow", back_populates="trace", cascade="all, delete-orphan", order_by="StepRow.index")
@@ -46,7 +55,7 @@ class StepRow(Base):  # type: ignore[misc, valid-type]
 
 class TraceStorage:
     def __init__(self, db_path: Path) -> None:
-        self._engine = create_engine(f"sqlite:///{db_path}")
+        self._engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
         Base.metadata.create_all(self._engine)
 
     def save_trace(self, trace: Trace) -> None:

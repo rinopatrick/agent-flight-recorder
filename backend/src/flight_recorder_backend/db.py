@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 from flight_recorder import BranchStorage, TraceStorage
