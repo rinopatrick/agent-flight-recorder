@@ -80,3 +80,13 @@ class TraceSession(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class Annotation(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    trace_id: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
