@@ -11,11 +11,13 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    exists,
+    func,
 )
 from sqlalchemy.orm import Session, declarative_base, relationship
 
 from flight_recorder.log_config import get_logger
-from flight_recorder.models import Step, StepType, Trace
+from flight_recorder.models import Step, StepType, Trace, TraceFilter
 
 logger = get_logger(__name__)
 
@@ -106,6 +108,48 @@ class TraceStorage:
                 .limit(limit)
                 .all()
             )
+            return [self._row_to_trace(r) for r in rows]
+
+    def search_traces(self, filter: TraceFilter, limit: int = 50, offset: int = 0) -> list[Trace]:
+        logger.debug("Searching traces (filter=%s, limit=%d, offset=%d)", filter, limit, offset)
+        with Session(self._engine) as session:
+            query = session.query(TraceRow)
+
+            if filter.agent_name is not None:
+                query = query.filter(TraceRow.agent_name == filter.agent_name)
+            if filter.created_after is not None:
+                query = query.filter(TraceRow.created_at >= filter.created_after)
+            if filter.created_before is not None:
+                query = query.filter(TraceRow.created_at <= filter.created_before)
+
+            if filter.step_type is not None:
+                query = query.filter(
+                    TraceRow.id.in_(
+                        session.query(StepRow.trace_id).filter(StepRow.step_type == filter.step_type.value)
+                    )
+                )
+
+            if filter.has_error is not None:
+                if filter.has_error:
+                    error_subq = exists().where(StepRow.trace_id == TraceRow.id, StepRow.error.isnot(None))
+                    query = query.filter(error_subq)
+                else:
+                    no_error_subq = exists().where(StepRow.trace_id == TraceRow.id, StepRow.error.isnot(None))
+                    query = query.filter(~no_error_subq)
+
+            if filter.min_cost is not None or filter.max_cost is not None:
+                cost_subq = (
+                    session.query(StepRow.trace_id, func.sum(StepRow.cost).label("total_cost"))
+                    .group_by(StepRow.trace_id)
+                )
+                if filter.min_cost is not None:
+                    cost_subq = cost_subq.having(func.sum(StepRow.cost) >= filter.min_cost)
+                if filter.max_cost is not None:
+                    cost_subq = cost_subq.having(func.sum(StepRow.cost) <= filter.max_cost)
+                matching_ids = [row.trace_id for row in cost_subq.all()]
+                query = query.filter(TraceRow.id.in_(matching_ids))
+
+            rows = query.order_by(TraceRow.created_at.desc()).offset(offset).limit(limit).all()
             return [self._row_to_trace(r) for r in rows]
 
     def delete_trace(self, trace_id: str) -> None:
