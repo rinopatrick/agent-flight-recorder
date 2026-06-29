@@ -90,3 +90,20 @@ class Annotation(BaseModel):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+
+
+class TraceComparison(BaseModel):
+    trace_a: Trace
+    trace_b: Trace
+
+    @property
+    def cost_diff(self) -> float:
+        return self.trace_b.total_cost() - self.trace_a.total_cost()
+
+    @property
+    def duration_diff(self) -> float:
+        return self.trace_b.total_duration_ms() - self.trace_a.total_duration_ms()
+
+    @property
+    def step_count_diff(self) -> int:
+        return len(self.trace_b.steps) - len(self.trace_a.steps)
