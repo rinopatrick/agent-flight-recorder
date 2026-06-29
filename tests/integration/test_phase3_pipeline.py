@@ -170,7 +170,7 @@ def test_export_import_via_api(saved_trace, client):
 
     reimport_data = {**exported, "id": uuid.uuid4().hex[:12]}
 
-    resp = client.post("/api/traces/import", json=reimport_data)
+    resp = client.post("/api/traces/import", json={"data": reimport_data})
     assert resp.status_code == 200
     imported_data = resp.json()
     assert imported_data["id"] == reimport_data["id"]
@@ -239,7 +239,7 @@ def test_full_phase3_pipeline(tmp_path: Path):
     assert api_exported["id"] == trace.id
 
     reimport = {**api_exported, "id": uuid.uuid4().hex[:12]}
-    resp = client.post("/api/traces/import", json=reimport)
+    resp = client.post("/api/traces/import", json={"data": reimport})
     assert resp.status_code == 200
     assert resp.json()["id"] == reimport["id"]
 
