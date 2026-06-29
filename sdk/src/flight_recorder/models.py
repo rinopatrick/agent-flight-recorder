@@ -107,3 +107,10 @@ class TraceComparison(BaseModel):
     @property
     def step_count_diff(self) -> int:
         return len(self.trace_b.steps) - len(self.trace_a.steps)
+
+
+class StreamEvent(BaseModel):
+    event_type: str
+    trace_id: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
