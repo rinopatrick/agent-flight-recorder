@@ -1,0 +1,6 @@
+[lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[lint.isort]
+known-first-party = ["flight_recorder_backend"]
